@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat + Music App</title>
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    #player { margin-bottom: 20px; }
+    #messages { max-height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; }
+    li { margin-bottom: 5px; }
+    input { padding: 5px; margin-bottom: 5px; width: 200px; }
+    button { padding: 5px 10px; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+<h2>🔥 Chat + Music</h2>
+
+<!-- LOGIN -->
+<input id="email" placeholder="Email"><br>
+<input id="password" type="password" placeholder="Password"><br>
+<button onclick="signup()">Sign Up</button>
+<button onclick="login()">Login</button>
+
+<hr>
+
+<!-- YOUTUBE PLAYER -->
+<h3>🎵 Shared Music Player</h3>
+<input id="videoId" placeholder="YouTube Video ID">
+<button onclick="loadVideo()">Load</button>
+<div id="player"></div>
+
+<hr>
+
+<!-- CHAT -->
+<ul id="messages"></ul>
+<input id="msg" placeholder="Type message">
+<button onclick="sendMessage()">Send</button>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
+
+<!-- YouTube API -->
+<script src="https://www.youtube.com/iframe_api"></script>
+
+<script>
+// 🔑 Replace with YOUR Firebase config
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// ===== AUTH =====
+function signup() {
+  auth.createUserWithEmailAndPassword(email.value, password.value)
+    .then(() => alert("Signed up!"))
+    .catch(e => alert(e.message));
+}
+
+function login() {
+  auth.signInWithEmailAndPassword(email.value, password.value)
+    .then(() => alert("Logged in!"))
+    .catch(e => alert(e.message));
+}
+
+// ===== CHAT =====
+function sendMessage() {
+  if(!auth.currentUser) { alert("Login first"); return; }
+  db.collection("messages").add({
+    text: msg.value,
+    user: auth.currentUser.email,
+    time: Date.now()
+  });
+  msg.value = "";
+}
+
+// Real-time chat listener
+db.collection("messages")
+  .orderBy("time")
+  .onSnapshot(snapshot => {
+    messages.innerHTML = "";
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const li = document.createElement("li");
+      li.textContent = data.user + ": " + data.text;
+      messages.appendChild(li);
+    });
+  });
+
+// ===== YOUTUBE PLAYER =====
+let player;
+
+function onYouTubeIframeAPIReady() {
+  player = new YT.Player('player', {
+    height: '200',
+    width: '300',
+    videoId: '',
+    events: { 'onStateChange': onPlayerStateChange }
+  });
+}
+
+function loadVideo() {
+  const id = videoId.value;
+  if (!id) return alert("Enter Video ID");
+
+  // Update Firestore to sync with all users
+  db.collection("control").doc("video").set({
+    videoId: id,
+    action: "load"
+  });
+}
+
+function onPlayerStateChange(event) {
+  if (!player || !auth.currentUser) return;
+
+  let action = "";
+  if (event.data === YT.PlayerState.PLAYING) action = "play";
+  if (event.data === YT.PlayerState.PAUSED) action = "pause";
+
+  if (action) {
+    db.collection("control").doc("video").set({ action: action }, { merge: true });
+  }
+}
+
+// Listen for changes from Firestore
+db.collection("control")
+  .doc("video")
+  .onSnapshot(doc => {
+    const data = doc.data();
+    if (!data) return;
+
+    if (data.videoId) player.loadVideoById(data.videoId);
+    if (data.action === "play") player.playVideo();
+    if (data.action === "pause") player.pauseVideo();
+  });
+
+</script>
+</body>
+</html>
